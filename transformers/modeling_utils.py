@@ -90,9 +90,29 @@ class PreTrainedModel(nn.Module):
     def base_model(self):
         return getattr(self, self.base_model_prefix, self)
 
-    def decode(self, input_ids, device, length=1, prompt_ids=torch.tensor([[]], dtype=torch.long), do_sample=True, temperature=1., k=0, p=0, repetition_penalty=1, **model_kwargs):
-        """ Generic text generator for single-stack models.
+    def decode(self,
+               prompt_ids=None,
+               device=torch.device('cpu'),
+               length=10,
+               do_sample=False,
+               temperature=1.,
+               k=9,
+               p=0,
+               repetition_penalty=1,
+               **model_kwargs):
+        """ Generic text generator for single-stack models with a LM head.
         """
+        
+        # add all parameters in `configuration_utils.py`
+        # check if parameters are passed as arguments
+        # override config
+
+        if prompt_ids is None:
+            prompt_ids = torch.tensor([[]], dtype=torch.long)
+
+        # if prompt_ids = None then fill with .
+
+        # add in init_weights initialization of Model
 
         # when the model does not have a LM head `_get_input_embeddings` will
         # raise an exception. We use this mechanism to determine whether we
@@ -112,6 +132,7 @@ class PreTrainedModel(nn.Module):
                 )
             )
 
+        # The branching logic will come here when we add other algorithms
         sampler_config = {
             "k": k,
             "p": p,
@@ -119,12 +140,15 @@ class PreTrainedModel(nn.Module):
             "temperature": temperature,
             "repetition_penalty": repetition_penalty,
         }
-        sampler = Sampler(device, **sampler_config)
+        return self._decode_using_sampling(prompt_ids, length, sampler_config, device, **model_kwargs)
 
+    def _decode_using_sampling(self, prompt_ids, length, sampler_config, device, **model_kwargs):
+        """ Generate text using the sampling algorithm."""
+        sampler = Sampler(device, **sampler_config)
         generated_sequence = prompt_ids
         with torch.no_grad():
             for _ in trange(length):
-                arguments = self._prepare_input_for_decoding(input_ids, **model_kwargs)
+                arguments = self._prepare_input_for_decoding(generated_sequence, **model_kwargs)
                 outputs = self(arguments)
                 next_tokens_logits = outputs[0][:, -1, :]
                 next_tokens = sampler.get_one_token(
