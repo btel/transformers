@@ -36,7 +36,7 @@ from torch.nn.parameter import Parameter
 
 from .modeling_utils import PreTrainedModel, Conv1D, prune_conv1d_layer, SequenceSummary
 from .configuration_transfo_xl import TransfoXLConfig
-from .modeling_transfo_xl_utilities import ProjectedAdaptiveLogSoftmax, sample_logits
+from .modeling_transfo_xl_utilities import ProjectedAdaptiveLogSoftmax, sample_logits, LogUniformSampler
 from .file_utils import add_start_docstrings
 
 logger = logging.getLogger(__name__)
@@ -870,6 +870,14 @@ class TransfoXLLMHeadModel(TransfoXLPreTrainedModel):
                             self.crit.out_projs[i] = nn.Parameter(self.transformer.word_emb.emb_projs[i].clone())
                         else:
                             self.crit.out_projs[i] = self.transformer.word_emb.emb_projs[i]
+
+    def get_output_embeddings(self):
+        """ Double-check if you are using adaptive softmax.
+        """
+        if self.sample_softmax > 0:
+            return self.out_layer
+        else:
+            return self.transformer
 
     def reset_length(self, tgt_len, ext_len, mem_len):
         self.transformer.reset_length(tgt_len, ext_len, mem_len)

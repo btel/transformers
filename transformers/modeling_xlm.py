@@ -660,10 +660,11 @@ class XLMWithLMHeadModel(XLMPreTrainedModel):
     def _prepare_inputs_for_decoding(self, input_ids, **model_kwargs):
         mask_token = model_kwargs.pop("mask_token", None)
         language = model_kwargs.pop("language", None)
-        input_ids = self._append_mask_token(input_ids, mask_token),
-        langs = self._create_language_embeddings(input_ids, language),
+        input_ids = self._append_mask_token(input_ids, mask_token)
+        langs = self._create_language_embeddings(input_ids, language)
         arguments = {"input_ids": input_ids, "langs": langs}
         arguments.update(model_kwargs)
+
         return arguments
 
     @staticmethod
@@ -671,14 +672,15 @@ class XLMWithLMHeadModel(XLMPreTrainedModel):
         """ Append a [MASK] token at the end of the sequence that the MLM model
         is going to try to predict.
         """
-        if mask_token_id:
+        if mask_token_id is not None:
             tokens_to_append = torch.full((1, 1), mask_token_id, dtype=torch.long)
             return torch.cat((sequence, tokens_to_append), dim=1)
+
         return sequence
 
     @staticmethod
     def _create_language_embeddings(sequence, language):
-        if language:
+        if language is not None:
             return torch.tensor([language] * sequence.shape[1]).view(1, -1)
         return None
 

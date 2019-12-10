@@ -20,20 +20,9 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 import argparse
 import logging
-from tqdm import trange
 
 import torch
-import torch.nn.functional as F
 import numpy as np
-
-from transformers import (
-    GPT2Config,
-    OpenAIGPTConfig,
-    XLNetConfig,
-    TransfoXLConfig,
-    XLMConfig,
-    CTRLConfig,
-)
 
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
 from transformers import OpenAIGPTLMHeadModel, OpenAIGPTTokenizer
@@ -41,7 +30,6 @@ from transformers import XLNetLMHeadModel, XLNetTokenizer
 from transformers import TransfoXLLMHeadModel, TransfoXLTokenizer
 from transformers import CTRLLMHeadModel, CTRLTokenizer
 from transformers import XLMWithLMHeadModel, XLMTokenizer
-from transformers import generate
 
 
 logging.basicConfig(
@@ -52,21 +40,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 MAX_LENGTH = int(10000)  # Hardcoded max length to avoid infinite loop
-
-ALL_MODELS = sum(
-    (
-        tuple(conf.pretrained_config_archive_map.keys())
-        for conf in (
-            GPT2Config,
-            OpenAIGPTConfig,
-            XLNetConfig,
-            TransfoXLConfig,
-            XLMConfig,
-            CTRLConfig,
-        )
-    ),
-    (),
-)
 
 MODEL_CLASSES = {
     "gpt2": (GPT2LMHeadModel, GPT2Tokenizer),
@@ -98,8 +71,11 @@ def set_seed(args):
     if args.n_gpu > 0:
         torch.cuda.manual_seed_all(args.seed)
 
+#
+# Functions to prepare models' input
+#
 
-# Each model has its quirks; we encapsulate the specificities in functions.
+
 def prepare_ctrl_input(args, _, tokenizer, prompt_text):
     if args.temperature > 0.7:
         logger.info(
@@ -111,7 +87,7 @@ def prepare_ctrl_input(args, _, tokenizer, prompt_text):
         logger.info(
             "WARNING! You are not starting your generation from a control code so you won't get good results"
         )
-    return encoded_prompt, {}
+    return prompt_text, {}
 
 
 def prepare_xlm_input(args, model, tokenizer, prompt_text):
@@ -119,8 +95,8 @@ def prepare_xlm_input(args, model, tokenizer, prompt_text):
 
     # Set the language
     use_lang_emb = hasattr(model.config, "use_lang_emb") and model.config.use_lang_emb
-    if hasattr(tokenizer, "lang2id") and use_lang_emb:
-        available_languages = tokenizer.lang2id.keys()
+    if hasattr(model.config, "lang2id") and use_lang_emb:
+        available_languages = model.config.lang2id.keys()
         if args.xlm_language in available_languages:
             language = args.xlm_language
         else:
@@ -174,7 +150,7 @@ def main():
     parser.add_argument("--model_type", default=None, type=str, required=True,
                         help="Model type selected in the list: " + ", ".join(MODEL_CLASSES.keys()))
     parser.add_argument("--model_name_or_path", default=None, type=str, required=True,
-                        help="Path to pre-trained model or shortcut name selected in the list: " + ", ".join(ALL_MODELS))
+                        help="Path to pre-trained model or shortcut name selected in the list: " + ", ".join(MODEL_CLASSES.keys()))
 
     parser.add_argument("--prompt", type=str, default="")
     parser.add_argument("--length", type=int, default=20)
@@ -220,34 +196,32 @@ def main():
 
     prompt_text = args.prompt if args.prompt else input("Model prompt >>> ")
 
-    # Prepare the sampler's input depending on the model
+    # Different models need different input formatting and/or extra arguments
     requires_preprocessing = args.model_type in PREPROCESSING_FUNCTIONS.keys()
     model_kwargs = {}
     if requires_preprocessing:
         prepare_input = PREPROCESSING_FUNCTIONS.get(args.model_type)
         prompt_text, model_kwargs = prepare_input(args, model, tokenizer, prompt_text)
-    encoded_prompt = tokenizer.encode(prompt_text, add_special_tokens=False)
+    encoded_prompt = torch.tensor(tokenizer.encode(prompt_text, add_special_tokens=False)).unsqueeze(0)
 
-    sampler = generate.new_sampler(
-        model=model,
+    output_sequences = model.decode(
+        prompt_ids=encoded_prompt,
+        length=args.length,
         temperature=args.temperature,
         k=args.k,
         p=args.p,
         repetition_penalty=args.repetition_penalty,
         device=args.device,
+        **model_kwargs,
     )
 
-    output_sequences = sampler.generate_sequence(
-        length=args.length, prompt_ids=encoded_prompt, **model_kwargs
-    )
-    generated_sequence = output_sequences[
-        len(encoded_prompt) :
+    generated_sequence = output_sequences.tolist()[
+        encoded_prompt.size(1) :
     ]  # adapted to case where num_samples > 1
     text = tokenizer.decode(generated_sequence, clean_up_tokenization_spaces=True)
     text = text[: text.find(args.stop_token) if args.stop_token else None]
 
     print(text)
-    return text
 
 
 if __name__ == "__main__":
