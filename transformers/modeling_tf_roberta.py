@@ -325,7 +325,7 @@ class TFRobertaClassificationHead(tf.keras.layers.Layer):
 
 
 @add_start_docstrings("""RoBERTa Model transformer with a sequence classification/regression head on top (a linear layer 
-    on top of the pooled output) e.g. for GLUE tasks. """,
+    on top of the embedding output) e.g. for GLUE tasks. """,
     ROBERTA_START_DOCSTRING, ROBERTA_INPUTS_DOCSTRING)
 class TFRobertaForSequenceClassification(TFRobertaPreTrainedModel):
     r"""
